@@ -1,0 +1,997 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NEXUS — AI Tic-Tac-Toe</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
+
+  <!-- STYLES -->
+  <style>
+    /*  Variables ─ */
+    :root {
+      --bg:          #050a0f;
+      --bg2:         #0a1520;
+      --bg3:         #0d1f2e;
+      --panel:       #0b1825;
+      --border:      #1a3548;
+      --cyan:        #00e5ff;
+      --cyan-dim:    #0096aa;
+      --pink:        #ff2d6b;
+      --pink-dim:    #8b0026;
+      --gold:        #ffd700;
+      --green:       #00ff88;
+      --white:       #e8f4fc;
+      --muted:       #4a7a99;
+      --cell-size:   clamp(90px, 18vmin, 130px);
+      --gap:         10px;
+      --radius:      12px;
+    }
+
+    /*  Reset ─ */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--white);
+      font-family: 'Share Tech Mono', monospace;
+      overflow-x: hidden;
+    }
+
+    /*  Scanline overlay  */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background: repeating-linear-gradient(
+        to bottom,
+        transparent 0px, transparent 3px,
+        rgba(0,229,255,.018) 3px, rgba(0,229,255,.018) 4px
+      );
+      pointer-events: none;
+      z-index: 9999;
+    }
+
+    /*  Stars background  */
+    #stars { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 0; }
+    .star {
+      position: absolute;
+      width: 2px; height: 2px;
+      background: var(--cyan);
+      border-radius: 50%;
+      opacity: 0;
+      animation: twinkle var(--d, 4s) ease-in-out var(--delay, 0s) infinite;
+    }
+    @keyframes twinkle {
+      0%, 100% { opacity: 0; }
+      50%       { opacity: var(--op, .6); }
+    }
+
+    /*  Layout  */
+    #app {
+      position: relative; z-index: 1;
+      min-height: 100vh;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 24px 16px;
+      gap: 24px;
+    }
+
+    /*  Header  */
+    header {
+      text-align: center;
+      animation: fadeDown .8s cubic-bezier(.22,1,.36,1) both;
+    }
+    .logo {
+      font-family: 'Orbitron', sans-serif;
+      font-weight: 900;
+      font-size: clamp(28px, 7vw, 52px);
+      letter-spacing: .15em;
+      color: var(--cyan);
+      text-shadow: 0 0 24px var(--cyan), 0 0 60px rgba(0,229,255,.3);
+      line-height: 1;
+    }
+    .tagline {
+      margin-top: 6px;
+      font-size: 11px;
+      letter-spacing: .3em;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+
+    /*  Score Strip ─ */
+    #scoreboard {
+      display: flex; gap: 20px; align-items: center;
+      animation: fadeDown .8s .1s cubic-bezier(.22,1,.36,1) both;
+    }
+    .score-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 22px;
+      text-align: center;
+      min-width: 90px;
+      position: relative;
+      overflow: hidden;
+      transition: border-color .3s, box-shadow .3s;
+    }
+    .score-card.active-turn {
+      border-color: var(--cyan);
+      box-shadow: 0 0 20px rgba(0,229,255,.25), inset 0 0 15px rgba(0,229,255,.06);
+    }
+    .score-card.active-turn::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: var(--cyan);
+      box-shadow: 0 0 10px var(--cyan);
+      animation: scanBar 1.4s linear infinite;
+    }
+    @keyframes scanBar {
+      0%   { transform: scaleX(0); transform-origin: left; }
+      50%  { transform: scaleX(1); transform-origin: left; }
+      51%  { transform-origin: right; }
+      100% { transform: scaleX(0); transform-origin: right; }
+    }
+    .score-label { font-size: 10px; letter-spacing: .2em; color: var(--muted); margin-bottom: 4px; }
+    .score-name  { font-family: 'Orbitron', sans-serif; font-size: 13px; font-weight: 700; }
+    .score-name.x { color: var(--cyan); }
+    .score-name.o { color: var(--pink); }
+    .score-val   { font-family: 'Orbitron', sans-serif; font-size: 26px; font-weight: 900; line-height: 1; margin-top: 4px; }
+    .score-val.x { color: var(--cyan); text-shadow: 0 0 12px var(--cyan); }
+    .score-val.o { color: var(--pink); text-shadow: 0 0 12px var(--pink); }
+    .vs-badge    { font-family: 'Orbitron', sans-serif; font-size: 11px; color: var(--muted); letter-spacing: .2em; }
+
+    /*  Status Bar  */
+    #status-bar {
+      height: 44px; display: flex; align-items: center; justify-content: center;
+      gap: 12px;
+      animation: fadeDown .8s .15s cubic-bezier(.22,1,.36,1) both;
+    }
+    #status-text {
+      font-size: 13px; letter-spacing: .12em;
+      color: var(--white); text-align: center;
+      transition: color .3s;
+    }
+    #status-text.thinking { color: var(--gold); }
+    #status-text.your-turn { color: var(--green); }
+    #status-text.game-over { color: var(--pink); }
+
+    /* Thinking dots */
+    .dots { display: inline-flex; gap: 5px; align-items: center; margin-left: 8px; }
+    .dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--gold);
+      animation: bounce .8s ease-in-out infinite;
+    }
+    .dot:nth-child(2) { animation-delay: .15s; }
+    .dot:nth-child(3) { animation-delay: .3s; }
+    @keyframes bounce {
+      0%, 100% { transform: translateY(0); opacity: .4; }
+      50%       { transform: translateY(-5px); opacity: 1; }
+    }
+
+    /*  Board ─ */
+    #board-wrapper {
+      position: relative;
+      animation: fadeUp .9s .2s cubic-bezier(.22,1,.36,1) both;
+    }
+    #board {
+      display: grid;
+      grid-template-columns: repeat(3, var(--cell-size));
+      grid-template-rows:    repeat(3, var(--cell-size));
+      gap: var(--gap);
+      padding: 14px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      box-shadow: 0 0 40px rgba(0,229,255,.07), 0 20px 60px rgba(0,0,0,.6);
+      position: relative;
+    }
+
+    /* Corner accents */
+    #board::before, #board::after,
+    #board .corner-tl, #board .corner-br {
+      content: '';
+      position: absolute;
+      width: 18px; height: 18px;
+      border-color: var(--cyan);
+      border-style: solid;
+      opacity: .6;
+    }
+    #board::before   { top: 6px; left: 6px;   border-width: 2px 0 0 2px; }
+    #board::after    { top: 6px; right: 6px;  border-width: 2px 2px 0 0; }
+
+    /*  Cell  */
+    .cell {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+      font-size: 0;                /* hide until filled */
+      position: relative;
+      overflow: hidden;
+      transition: background .2s, border-color .2s, transform .1s, box-shadow .2s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .cell:hover:not(.filled):not(.disabled) {
+      background: #122030;
+      border-color: var(--cyan-dim);
+      box-shadow: inset 0 0 18px rgba(0,229,255,.1);
+    }
+    .cell:hover:not(.filled):not(.disabled)::after {
+      content: attr(data-symbol);
+      font-family: 'Orbitron', sans-serif;
+      font-size: calc(var(--cell-size) * .36);
+      font-weight: 900;
+      opacity: .18;
+      color: var(--cyan);
+    }
+    .cell:active:not(.filled):not(.disabled) { transform: scale(.94); }
+
+    /* Symbol inside cell */
+    .cell .sym {
+      font-family: 'Orbitron', sans-serif;
+      font-size: calc(var(--cell-size) * .42);
+      font-weight: 900;
+      line-height: 1;
+      opacity: 0;
+      transform: scale(.3) rotate(-15deg);
+      transition: none;
+    }
+    .cell.filled .sym {
+      animation: popIn .35s cubic-bezier(.34,1.56,.64,1) forwards;
+    }
+    .cell.ai-placed .sym {
+      animation: aiDrop .4s cubic-bezier(.34,1.56,.64,1) forwards;
+    }
+
+    @keyframes popIn {
+      0%   { opacity: 0; transform: scale(.3) rotate(-15deg); }
+      60%  { opacity: 1; transform: scale(1.15) rotate(4deg); }
+      100% { opacity: 1; transform: scale(1) rotate(0deg); }
+    }
+    @keyframes aiDrop {
+      0%   { opacity: 0; transform: scale(1.8) rotate(10deg); }
+      60%  { opacity: 1; transform: scale(.92) rotate(-3deg); }
+      100% { opacity: 1; transform: scale(1) rotate(0deg); }
+    }
+
+    .cell .sym.x { color: var(--cyan); text-shadow: 0 0 20px var(--cyan), 0 0 40px rgba(0,229,255,.4); }
+    .cell .sym.o { color: var(--pink); text-shadow: 0 0 20px var(--pink), 0 0 40px rgba(255,45,107,.4); }
+
+    .cell.filled   { cursor: default; }
+    .cell.disabled { cursor: not-allowed; }
+
+    /* Winning cell glow */
+    .cell.winner {
+      border-color: var(--gold) !important;
+      box-shadow: 0 0 24px rgba(255,215,0,.5), inset 0 0 20px rgba(255,215,0,.1) !important;
+      animation: winPulse 1s ease-in-out infinite;
+    }
+    @keyframes winPulse {
+      0%, 100% { box-shadow: 0 0 24px rgba(255,215,0,.5), inset 0 0 20px rgba(255,215,0,.1); }
+      50%       { box-shadow: 0 0 40px rgba(255,215,0,.8), inset 0 0 30px rgba(255,215,0,.2); }
+    }
+
+    /* AI thinking ripple on cells */
+    .cell.thinking-ripple::before {
+      content: '';
+      position: absolute; inset: 0;
+      background: radial-gradient(circle, rgba(255,215,0,.15) 0%, transparent 70%);
+      animation: rippleFade .6s ease-out forwards;
+    }
+    @keyframes rippleFade {
+      0%   { opacity: 1; transform: scale(.5); }
+      100% { opacity: 0; transform: scale(1.5); }
+    }
+
+    /* Win line (SVG overlay) */
+    #win-line {
+      position: absolute; inset: 0;
+      pointer-events: none; z-index: 10;
+    }
+    #win-line line {
+      stroke: var(--gold);
+      stroke-width: 4;
+      stroke-linecap: round;
+      filter: drop-shadow(0 0 8px var(--gold));
+      stroke-dasharray: 500;
+      stroke-dashoffset: 500;
+      animation: drawLine .5s .15s ease forwards;
+    }
+    @keyframes drawLine {
+      to { stroke-dashoffset: 0; }
+    }
+
+    /*  Bottom Panel  */
+    #bottom-panel {
+      display: flex; flex-direction: column; align-items: center; gap: 14px;
+      animation: fadeUp .9s .3s cubic-bezier(.22,1,.36,1) both;
+    }
+
+    /* AI reasoning box */
+    #ai-reasoning {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--gold);
+      border-radius: var(--radius);
+      padding: 12px 18px;
+      max-width: 440px; width: 100%;
+      min-height: 58px;
+      font-size: 12px; line-height: 1.6;
+      color: #8da8bb;
+      transition: opacity .3s;
+    }
+    #ai-reasoning .reason-label {
+      font-size: 9px; letter-spacing: .25em; color: var(--gold);
+      text-transform: uppercase; margin-bottom: 5px;
+    }
+    #ai-reasoning .strategy-badge {
+      display: inline-block;
+      background: rgba(255,215,0,.12);
+      border: 1px solid rgba(255,215,0,.3);
+      color: var(--gold);
+      font-size: 9px; letter-spacing: .2em;
+      padding: 2px 8px; border-radius: 20px;
+      margin-right: 8px; vertical-align: middle;
+      text-transform: uppercase;
+    }
+    #ai-reasoning .latency {
+      font-size: 9px; color: var(--muted); margin-top: 4px;
+    }
+
+    /* Buttons */
+    .btn {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 12px; font-weight: 700;
+      letter-spacing: .15em;
+      padding: 12px 28px;
+      border: 1px solid var(--cyan);
+      background: transparent;
+      color: var(--cyan);
+      border-radius: 6px;
+      cursor: pointer;
+      text-transform: uppercase;
+      position: relative; overflow: hidden;
+      transition: color .25s, box-shadow .25s, background .25s;
+    }
+    .btn::before {
+      content: '';
+      position: absolute; inset: 0;
+      background: var(--cyan);
+      transform: scaleX(0); transform-origin: left;
+      transition: transform .25s ease;
+      z-index: -1;
+    }
+    .btn:hover { color: var(--bg); box-shadow: 0 0 20px rgba(0,229,255,.4); }
+    .btn:hover::before { transform: scaleX(1); }
+    .btn:active { transform: scale(.96); }
+
+    #btn-row { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+
+    /* Symbol selector */
+    #symbol-selector {
+      display: flex; gap: 10px; align-items: center;
+      font-size: 11px; color: var(--muted); letter-spacing: .15em;
+    }
+    .sym-btn {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 14px; font-weight: 900;
+      padding: 8px 20px;
+      border: 2px solid var(--border);
+      background: var(--bg3);
+      border-radius: 8px; cursor: pointer;
+      transition: all .2s;
+    }
+    .sym-btn.x { color: var(--cyan); }
+    .sym-btn.o { color: var(--pink); }
+    .sym-btn.selected.x { border-color: var(--cyan); background: rgba(0,229,255,.08); box-shadow: 0 0 14px rgba(0,229,255,.3); }
+    .sym-btn.selected.o { border-color: var(--pink); background: rgba(255,45,107,.08); box-shadow: 0 0 14px rgba(255,45,107,.3); }
+    .sym-btn:not(.selected):hover { border-color: var(--muted); }
+
+    /*  Result Overlay  */
+    #result-overlay {
+      position: fixed; inset: 0;
+      background: rgba(5,10,15,.88);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 100;
+      opacity: 0; pointer-events: none;
+      transition: opacity .4s;
+      backdrop-filter: blur(4px);
+    }
+    #result-overlay.show { opacity: 1; pointer-events: all; }
+    .result-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 40px 52px;
+      text-align: center;
+      transform: scale(.8);
+      transition: transform .4s cubic-bezier(.34,1.56,.64,1);
+      position: relative; overflow: hidden;
+      max-width: 360px;
+    }
+    #result-overlay.show .result-card { transform: scale(1); }
+    .result-card::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 3px;
+    }
+    .result-card.win::before  { background: var(--green); box-shadow: 0 0 20px var(--green); }
+    .result-card.lose::before { background: var(--pink);  box-shadow: 0 0 20px var(--pink); }
+    .result-card.draw::before { background: var(--gold);  box-shadow: 0 0 20px var(--gold); }
+    .result-icon { font-size: 52px; line-height: 1; margin-bottom: 12px; }
+    .result-title {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 26px; font-weight: 900;
+      letter-spacing: .1em; margin-bottom: 8px;
+    }
+    .result-card.win  .result-title { color: var(--green); text-shadow: 0 0 20px var(--green); }
+    .result-card.lose .result-title { color: var(--pink);  text-shadow: 0 0 20px var(--pink); }
+    .result-card.draw .result-title { color: var(--gold);  text-shadow: 0 0 20px var(--gold); }
+    .result-sub { font-size: 12px; color: var(--muted); margin-bottom: 28px; letter-spacing: .1em; }
+    .result-btns { display: flex; gap: 10px; justify-content: center; }
+
+    /*  Animations  */
+    @keyframes fadeDown {
+      from { opacity: 0; transform: translateY(-20px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /*  Confetti canvas ─ */
+    #confetti-canvas {
+      position: fixed; inset: 0; pointer-events: none; z-index: 50;
+    }
+
+    /*  Responsive  */
+    @media (max-width: 480px) {
+      :root { --cell-size: 88px; --gap: 8px; }
+      .result-card { padding: 30px 28px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Stars -->
+<div id="stars"></div>
+
+<!-- Confetti -->
+<canvas id="confetti-canvas"></canvas>
+
+<!-- Main App -->
+<div id="app">
+
+  <header>
+    <div class="logo">NEXUS</div>
+    <div class="tagline">AI-Powered Tic-Tac-Toe Engine · GPT-4o</div>
+  </header>
+
+  <!-- Scoreboard -->
+  <div id="scoreboard">
+    <div class="score-card" id="score-you">
+      <div class="score-label">YOU</div>
+      <div class="score-name x" id="your-symbol">X</div>
+      <div class="score-val x" id="score-human">0</div>
+    </div>
+    <div class="vs-badge">VS</div>
+    <div class="score-card" id="score-ai">
+      <div class="score-label">NEXUS AI</div>
+      <div class="score-name o" id="ai-symbol-label">O</div>
+      <div class="score-val o" id="score-nexus">0</div>
+    </div>
+  </div>
+
+  <!-- Status -->
+  <div id="status-bar">
+    <span id="status-text" class="your-turn">YOUR TURN — PLACE YOUR MARK</span>
+  </div>
+
+  <!-- Board -->
+  <div id="board-wrapper">
+    <div id="board">
+      <!-- 9 cells rendered by JS -->
+    </div>
+    <svg id="win-line" viewBox="0 0 320 320" xmlns="http://www.w3.org/2000/svg">
+      <!-- line drawn by JS on win -->
+    </svg>
+  </div>
+
+  <!-- Bottom Panel -->
+  <div id="bottom-panel">
+
+    <!-- AI Reasoning Box -->
+    <div id="ai-reasoning">
+      <div class="reason-label">NEXUS AI ANALYSIS</div>
+      <span id="reason-text" style="color: var(--muted); font-style: italic;">Awaiting first move…</span>
+    </div>
+
+    <!-- Symbol Selector + Controls -->
+    <div id="symbol-selector">
+      PLAY AS
+      <button class="sym-btn x selected" id="btn-x" onclick="selectSymbol('X')">X</button>
+      <button class="sym-btn o"          id="btn-o" onclick="selectSymbol('O')">O</button>
+    </div>
+
+    <div id="btn-row">
+      <button class="btn" onclick="resetGame()">NEW GAME</button>
+    </div>
+
+  </div>
+
+</div>
+
+<!-- Result Overlay -->
+<div id="result-overlay">
+  <div class="result-card" id="result-card">
+    <div class="result-icon" id="result-icon">🏆</div>
+    <div class="result-title" id="result-title">YOU WIN</div>
+    <div class="result-sub"  id="result-sub">NEXUS HAS BEEN DEFEATED</div>
+    <div class="result-btns">
+      <button class="btn" onclick="closeOverlayAndReset()">PLAY AGAIN</button>
+    </div>
+  </div>
+</div>
+
+     SCRIPT
+============================================================ -->
+<script>
+  /*  Config ─ */
+  const API_BASE = 'http://localhost:8080';
+
+  /*  State  */
+  const state = {
+    board: Array.from({length:3}, () => Array(3).fill('')),
+    humanSymbol: 'X',
+    aiSymbol: 'O',
+    moveHistory: [],
+    moveNumber: 0,
+    currentTurn: 'human',   // 'human' | 'ai'
+    gameOver: false,
+    scores: { human: 0, ai: 0 },
+    aiFirst: false,         // true when human chose O
+  };
+
+  /*  DOM refs  */
+  const boardEl      = document.getElementById('board');
+  const statusText   = document.getElementById('status-text');
+  const reasonText   = document.getElementById('reason-text');
+  const reasonBox    = document.getElementById('ai-reasoning');
+  const winLineSVG   = document.getElementById('win-line');
+  const overlayEl    = document.getElementById('result-overlay');
+  const resultCard   = document.getElementById('result-card');
+  const resultIcon   = document.getElementById('result-icon');
+  const resultTitle  = document.getElementById('result-title');
+  const resultSub    = document.getElementById('result-sub');
+  const scoreHuman   = document.getElementById('score-human');
+  const scoreNexus   = document.getElementById('score-nexus');
+  const yourSymLabel = document.getElementById('your-symbol');
+  const aiSymLabel   = document.getElementById('ai-symbol-label');
+  const scoreYouCard = document.getElementById('score-you');
+  const scoreAiCard  = document.getElementById('score-ai');
+
+  /*  Stars init  */
+  (function initStars() {
+    const container = document.getElementById('stars');
+    for (let i = 0; i < 80; i++) {
+      const s = document.createElement('div');
+      s.className = 'star';
+      s.style.cssText = `
+        left:${Math.random()*100}%;
+        top:${Math.random()*100}%;
+        --d:${(3 + Math.random()*5).toFixed(1)}s;
+        --delay:${(Math.random()*6).toFixed(1)}s;
+        --op:${(.2+Math.random()*.7).toFixed(2)};
+      `;
+      container.appendChild(s);
+    }
+  })();
+
+  /*  Board Rendering ─ */
+  function buildBoard() {
+    boardEl.innerHTML = '';
+    winLineSVG.innerHTML = '';
+    for (let r = 0; r < 3; r++) {
+      for (let c = 0; c < 3; c++) {
+        const cell = document.createElement('div');
+        cell.className = 'cell';
+        cell.dataset.row = r;
+        cell.dataset.col = c;
+        cell.dataset.symbol = state.humanSymbol;
+        cell.innerHTML = `<span class="sym"></span>`;
+        cell.addEventListener('click', onCellClick);
+        boardEl.appendChild(cell);
+      }
+    }
+  }
+
+  function getCellEl(r, c) {
+    return boardEl.querySelector(`[data-row="${r}"][data-col="${c}"]`);
+  }
+
+  function renderCell(r, c, symbol, isAI = false) {
+    const cell = getCellEl(r, c);
+    if (!cell) return;
+    cell.classList.add('filled');
+    if (isAI) cell.classList.add('ai-placed');
+    cell.removeEventListener('click', onCellClick);
+    const symEl = cell.querySelector('.sym');
+    symEl.textContent = symbol;
+    symEl.classList.add(symbol.toLowerCase());
+  }
+
+  function setAllDisabled(disabled) {
+    boardEl.querySelectorAll('.cell').forEach(cell => {
+      if (!cell.classList.contains('filled')) {
+        cell.classList.toggle('disabled', disabled);
+      }
+    });
+  }
+
+  /*  Status helpers  */
+  function setStatus(msg, cls = '') {
+    statusText.textContent = msg;
+    statusText.className = cls;
+  }
+
+  function setThinkingStatus() {
+    statusText.innerHTML = `NEXUS IS THINKING<span class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span>`;
+    statusText.className = 'thinking';
+  }
+
+  /*  Turn indicator  */
+  function updateTurnIndicator(turn) {
+    scoreYouCard.classList.toggle('active-turn', turn === 'human');
+    scoreAiCard.classList.toggle('active-turn', turn === 'ai');
+  }
+
+  /*  Cell hover hint symbol  */
+  function updateHoverHints() {
+    boardEl.querySelectorAll('.cell:not(.filled)').forEach(cell => {
+      cell.dataset.symbol = state.humanSymbol;
+    });
+  }
+
+  /*  Win check (client-side mirror) ─ */
+  function checkWinnerLocal(board) {
+    const lines = [
+      [[0,0],[0,1],[0,2]], [[1,0],[1,1],[1,2]], [[2,0],[2,1],[2,2]],
+      [[0,0],[1,0],[2,0]], [[0,1],[1,1],[2,1]], [[0,2],[1,2],[2,2]],
+      [[0,0],[1,1],[2,2]], [[0,2],[1,1],[2,0]],
+    ];
+    for (const line of lines) {
+      const [a,b,c] = line;
+      if (board[a[0]][a[1]] && board[a[0]][a[1]] === board[b[0]][b[1]] && board[a[0]][a[1]] === board[c[0]][c[1]]) {
+        return { winner: board[a[0]][a[1]], line };
+      }
+    }
+    return null;
+  }
+
+  function isDrawLocal(board) {
+    return board.every(row => row.every(c => c !== ''));
+  }
+
+  /*  Draw win line ─ */
+  function drawWinLine(cells) {
+    // board is padding=14px, cellSize+gap tiled
+    const size   = boardEl.offsetWidth;
+    const pad    = 14;
+    const inner  = size - pad * 2;
+    const step   = inner / 3;
+    const offset = step / 2;
+
+    function pos(r, c) {
+      return {
+        x: pad + c * step + offset,
+        y: pad + r * step + offset
+      };
+    }
+
+    const [a, , c] = cells;
+    const start = pos(a[0], a[1]);
+    const end   = pos(c[0], c[1]);
+
+    winLineSVG.setAttribute('viewBox', `0 0 ${size} ${size}`);
+    winLineSVG.innerHTML = `<line x1="${start.x}" y1="${start.y}" x2="${end.x}" y2="${end.y}"/>`;
+  }
+
+  /*  Highlight winning cells ─ */
+  function highlightWinners(line) {
+    line.forEach(([r,c]) => {
+      const cell = getCellEl(r, c);
+      if (cell) cell.classList.add('winner');
+    });
+    drawWinLine(line);
+  }
+
+  /*  Game Over ─ */
+  function handleGameOver(winner, line) {
+    state.gameOver = true;
+    setAllDisabled(true);
+    updateTurnIndicator(null);
+
+    if (line) highlightWinners(line);
+
+    setTimeout(() => {
+      if (winner === state.humanSymbol) {
+        state.scores.human++;
+        scoreHuman.textContent = state.scores.human;
+        showResult('win', '🏆', 'YOU WIN!', 'NEXUS HAS BEEN DEFEATED');
+        launchConfetti('win');
+      } else if (winner === state.aiSymbol) {
+        state.scores.ai++;
+        scoreNexus.textContent = state.scores.ai;
+        showResult('lose', '🤖', 'NEXUS WINS', 'THE AI IS UNDEFEATED');
+        launchConfetti('lose');
+      } else {
+        showResult('draw', '⚡', 'DRAW', 'PERFECTLY BALANCED');
+        launchConfetti('draw');
+      }
+    }, 700);
+  }
+
+  /*  AI Thinking ripple animation ─ */
+  function runThinkingRipples() {
+    const empties = Array.from(boardEl.querySelectorAll('.cell:not(.filled)'));
+    if (!empties.length) return;
+    let i = 0;
+    const interval = setInterval(() => {
+      if (state.currentTurn !== 'ai' || state.gameOver) { clearInterval(interval); return; }
+      const cell = empties[i % empties.length];
+      cell.classList.add('thinking-ripple');
+      setTimeout(() => cell.classList.remove('thinking-ripple'), 600);
+      i++;
+    }, 220);
+    return interval;
+  }
+
+  /*  API: Get AI move  */
+  async function fetchAIMove(lastHumanMove) {
+    const payload = {
+      board:            state.board,
+      human_symbol:     state.humanSymbol,
+      ai_symbol:        state.aiSymbol,
+      last_human_move:  lastHumanMove,
+      move_history:     state.moveHistory,
+      move_number:      state.moveNumber,
+    };
+
+    const res = await fetch(`${API_BASE}/api/ai-move`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Unknown error' }));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+    return res.json();
+  }
+
+  /*  Human move handler  */
+  async function onCellClick(e) {
+    if (state.gameOver || state.currentTurn !== 'human') return;
+    const cell = e.currentTarget;
+    if (cell.classList.contains('filled') || cell.classList.contains('disabled')) return;
+
+    const r = parseInt(cell.dataset.row);
+    const c = parseInt(cell.dataset.col);
+
+    // Place human mark
+    state.board[r][c] = state.humanSymbol;
+    state.moveNumber++;
+    state.moveHistory.push({
+      player: 'human', symbol: state.humanSymbol,
+      row: r, col: c, move_number: state.moveNumber
+    });
+    renderCell(r, c, state.humanSymbol, false);
+
+    // Check if human won
+    const result = checkWinnerLocal(state.board);
+    if (result) {
+      setStatus('YOU WIN!', 'game-over');
+      handleGameOver(result.winner, result.line);
+      return;
+    }
+    if (isDrawLocal(state.board)) {
+      setStatus("IT'S A DRAW", 'game-over');
+      handleGameOver(null, null);
+      return;
+    }
+
+    // AI's turn
+    state.currentTurn = 'ai';
+    setAllDisabled(true);
+    setThinkingStatus();
+    updateTurnIndicator('ai');
+    updateReasonBox(null, null, null, true);
+
+    const rippleTimer = runThinkingRipples();
+
+    try {
+      const aiResp = await fetchAIMove({ row: r, col: c });
+      clearInterval(rippleTimer);
+
+      const ar = aiResp.row;
+      const ac = aiResp.col;
+
+      // Place AI mark
+      state.board[ar][ac] = state.aiSymbol;
+      state.moveNumber++;
+      state.moveHistory.push({
+        player: 'ai', symbol: state.aiSymbol,
+        row: ar, col: ac, move_number: state.moveNumber
+      });
+      renderCell(ar, ac, state.aiSymbol, true);
+      updateReasonBox(aiResp.reasoning, aiResp.strategy, aiResp.latency_ms, false);
+
+      // Check if AI won
+      const aiResult = checkWinnerLocal(state.board);
+      if (aiResult) {
+        setStatus('NEXUS WINS', 'game-over');
+        handleGameOver(aiResult.winner, aiResult.line);
+        return;
+      }
+      if (isDrawLocal(state.board)) {
+        setStatus("IT'S A DRAW", 'game-over');
+        handleGameOver(null, null);
+        return;
+      }
+
+      // Back to human
+      state.currentTurn = 'human';
+      setAllDisabled(false);
+      setStatus('YOUR TURN — PLACE YOUR MARK', 'your-turn');
+      updateTurnIndicator('human');
+
+    } catch (err) {
+      clearInterval(rippleTimer);
+      console.error('AI error:', err);
+      updateReasonBox(`Error: ${err.message}. Using fallback.`, 'error', 0, false);
+      // Fallback: pick first empty cell
+      const empty = state.board.flatMap((row, ri) =>
+        row.map((v, ci) => v === '' ? {row:ri,col:ci} : null).filter(Boolean)
+      )[0];
+      if (empty) {
+        state.board[empty.row][empty.col] = state.aiSymbol;
+        state.moveNumber++;
+        state.moveHistory.push({
+          player: 'ai', symbol: state.aiSymbol,
+          row: empty.row, col: empty.col, move_number: state.moveNumber
+        });
+        renderCell(empty.row, empty.col, state.aiSymbol, true);
+        const fb = checkWinnerLocal(state.board);
+        if (fb) { handleGameOver(fb.winner, fb.line); return; }
+        if (isDrawLocal(state.board)) { handleGameOver(null, null); return; }
+      }
+      state.currentTurn = 'human';
+      setAllDisabled(false);
+      setStatus('YOUR TURN', 'your-turn');
+      updateTurnIndicator('human');
+    }
+  }
+
+  /*  Update AI reasoning box ─ */
+  function updateReasonBox(reasoning, strategy, latencyMs, isThinking) {
+    if (isThinking) {
+      reasonText.innerHTML = `<em style="color:var(--gold)">Analyzing board state<span class="dots"><span class="dot" style="background:var(--gold)"></span><span class="dot" style="background:var(--gold)"></span><span class="dot" style="background:var(--gold)"></span></span></em>`;
+      return;
+    }
+    if (!reasoning) {
+      reasonText.innerHTML = `<em style="color:var(--muted)">Awaiting first move…</em>`;
+      return;
+    }
+    const badge = strategy
+      ? `<span class="strategy-badge">${strategy.toUpperCase()}</span>`
+      : '';
+    const lat = latencyMs
+      ? `<div class="latency">⚡ Response: ${latencyMs.toFixed(0)}ms</div>`
+      : '';
+    reasonText.innerHTML = `${badge}${reasoning}${lat}`;
+  }
+
+  /*  Symbol selector ─ */
+  function selectSymbol(sym) {
+    state.humanSymbol = sym;
+    state.aiSymbol    = sym === 'X' ? 'O' : 'X';
+    document.getElementById('btn-x').classList.toggle('selected', sym === 'X');
+    document.getElementById('btn-o').classList.toggle('selected', sym === 'O');
+    yourSymLabel.textContent = sym;
+    yourSymLabel.className   = `score-name ${sym.toLowerCase()}`;
+    aiSymLabel.textContent   = state.aiSymbol;
+    aiSymLabel.className     = `score-name ${state.aiSymbol.toLowerCase()}`;
+    resetGame();
+  }
+
+  /*  Result Overlay  */
+  function showResult(type, icon, title, sub) {
+    resultCard.className = `result-card ${type}`;
+    resultIcon.textContent  = icon;
+    resultTitle.textContent = title;
+    resultSub.textContent   = sub;
+    overlayEl.classList.add('show');
+  }
+
+  function closeOverlayAndReset() {
+    overlayEl.classList.remove('show');
+    setTimeout(resetGame, 200);
+  }
+
+  /*  Reset game  */
+  function resetGame() {
+    state.board       = Array.from({length:3}, () => Array(3).fill(''));
+    state.moveHistory = [];
+    state.moveNumber  = 0;
+    state.currentTurn = 'human';
+    state.gameOver    = false;
+    updateHoverHints();
+    buildBoard();
+    updateReasonBox(null, null, null, false);
+    setStatus('YOUR TURN — PLACE YOUR MARK', 'your-turn');
+    updateTurnIndicator('human');
+  }
+
+  /*  Confetti  */
+  function launchConfetti(type) {
+    const canvas = document.getElementById('confetti-canvas');
+    const ctx    = canvas.getContext('2d');
+    canvas.width  = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    const colors = type === 'win'
+      ? ['#00ff88','#00e5ff','#ffd700']
+      : type === 'lose'
+      ? ['#ff2d6b','#ff6090','#ffd700']
+      : ['#ffd700','#ffffff','#00e5ff'];
+
+    const particles = Array.from({length: type === 'draw' ? 40 : 80}, () => ({
+      x: Math.random() * canvas.width,
+      y: -10,
+      r: 3 + Math.random() * 5,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      vx: (Math.random() - .5) * 4,
+      vy: 2 + Math.random() * 4,
+      rot: Math.random() * Math.PI * 2,
+      rotV: (Math.random() - .5) * .2,
+      alpha: 1,
+    }));
+
+    let frame;
+    function animate() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      let alive = false;
+      particles.forEach(p => {
+        if (p.y > canvas.height + 20) return;
+        alive = true;
+        p.x  += p.vx;
+        p.y  += p.vy;
+        p.vy += .06;
+        p.rot += p.rotV;
+        if (p.y > canvas.height * .7) p.alpha = Math.max(0, p.alpha - .02);
+        ctx.save();
+        ctx.globalAlpha = p.alpha;
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rot);
+        ctx.fillStyle = p.color;
+        ctx.fillRect(-p.r, -p.r/2, p.r*2, p.r);
+        ctx.restore();
+      });
+      if (alive) frame = requestAnimationFrame(animate);
+      else ctx.clearRect(0,0,canvas.width,canvas.height);
+    }
+    if (frame) cancelAnimationFrame(frame);
+    animate();
+  }
+
+  /*  Boot  */
+  buildBoard();
+  updateTurnIndicator('human');
+</script>
+</body>
+</html>
